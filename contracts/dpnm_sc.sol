@@ -1,5 +1,18 @@
 // SPDX-License-Identifier: MIT
 
+
+// ********************************************************************************************************
+//        __   _______    ____  _____   ____    ____       _________            __                        
+//       |  ] |_   __ \  |_   \|_   _| |_   \  /   _|     |  _   _  |          [  |  _                    
+//   .--.| |    | |__) |   |   \ | |     |   \/   |       |_/ | | \_|   .--.    | | / ]   .---.   _ .--.  
+// / /'`\' |    |  ___/    | |\ \| |     | |\  /| |           | |     / .'`\ \  | '' <   / /__\\ [ `.-. | 
+// | \__/  |   _| |_      _| |_\   |_   _| |_\/_| |_         _| |_    | \__. |  | |`\ \  | \__.,  | | | | 
+//  '.__.;__] |_____|    |_____|\____| |_____||_____|       |_____|    '.__.'  [__|  \_]  '.__.' [___||__]
+//
+//                                             www.dpnmDeFi.com                                                                 
+// ********************************************************************************************************
+
+
 pragma solidity ^0.8.6;
 
 import "hardhat/console.sol";
@@ -64,6 +77,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
     phenomenalTreeInt public contractTree;
     GWT public gwt;
     address private _promoter;//address for enabling promotion conditions
+    address immutable public firstUser;
 
     address public feeCollector;//dev address for earning fees
 
@@ -88,13 +102,12 @@ contract dpnmMain is IERC20Metadata, Ownable {
 
     uint public earnLimitDepositedPerc = 200;//Amount of earn limit accrued from dPNM bought in tree 10 lvls down. Default = 200% of buy cost. Mutable 200-250%
     uint public maxDailyBuy = 0;//Max daily dPNM buy limit in BUSD for a user. if == 0 then 0.1% from liquidity amount. If != 0 then amount in BUSD. Mutable.
-    uint public minDailyBuy = 50e18;//Min daily dPNM buy limit for user in BUSD. Immutable
+    uint constant public lowerBoundMaxDailyBuy = 50e18;//Min daily dPNM buy limit for user in BUSD. Immutable
 
     uint public totalUsers = 0;
     uint public totalUsersEarnings = 0;//Total user earnings accumulated for all time.
     uint public treePaymentPeriod = 30 days;//Amount of days for tree due on tree payment. Default = 30 days. Mutable 30-60 days
     uint public treeMaxPaymentPeriod = 90 days;//Max amount of days tree can be paid upfront. Mutable 90-180 days
-    uint8 private treeDepth = 10;//This variable used for TESTING purpose, to fasten tests. For PRODUCTION it should be 10.
 
     uint public totaldPNM = 0;//Total amount of dPNM tokens
     uint public mindPNMBuy = 20e18;//Min amount of dPNM that can be purchased at one transaction
@@ -130,7 +143,8 @@ contract dpnmMain is IERC20Metadata, Ownable {
 
     mapping(address => User) public users;
     mapping(address => uint[10]) public treeUserLostProfits;//Amount of lost bonus from each lvl of tree 10 lvls deep.
-    mapping(address => bool[10]) public treeuserlevelslock;//Which lvls locked for user, from start lvls 4-10 are locked
+    mapping(address => uint) public firstLockedLvl;//Store first level number that is locked for user in a tree
+
 
     event Activation(address indexed user, address indexed referrer);
     event BuydPNM(address indexed user, uint dPNMamount, uint BUSDamount, uint dPNMprice);
@@ -145,7 +159,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
         _name = "dPNM Token";
         _symbol = "dPNM";
         _promoter = msg.sender;
-
+        firstUser = msg.sender;
         init(_depositTokenAddress, _treeAddress, _gwt, collector);
     }
   
@@ -158,6 +172,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @param collector Address of feeCollector
      */
     function init(IERC20 _depositTokenAddress, phenomenalTreeInt _treeAddress, GWT _gwt, address collector) private {
+        require(collector!=address(0),'Non zero address');
 
         busd = _depositTokenAddress;
         contractTree = _treeAddress;
@@ -165,26 +180,9 @@ contract dpnmMain is IERC20Metadata, Ownable {
         feeCollector = collector;
 
         //create first user
-        User memory user = User({
-            dpnmBalance: 0,
-            referrer: address(0),
-            treePaidUntil: block.timestamp,//date until tree is paid
-            earnLimitLeft: 0,
-            totalEarnLimit: 0,
-            totalTurnover: 0,
-            totalEarned: 0,
-            tokenData: buySellData(0,0,0,0,0)
-
-        });
-
-        users[msg.sender] = user;
-        treeUserLostProfits[msg.sender] = [0,0,0,0,0,0,0,0,0,0];
-        treeuserlevelslock[msg.sender] = [true,true,true,false,false,false,false,false,false,false];
-
-        totalUsers = 1;
+        createUser(msg.sender, address(0));
 
         //set cost of lvls to unlock
-        
         for (uint i=0;i<3;i++) {
             treeLvlUnlockCost.push(0);
         }
@@ -218,10 +216,10 @@ contract dpnmMain is IERC20Metadata, Ownable {
         require(!isUserExists(newUser), "User already exists");
         require(isUserExists(referrerAddress), "Referrer not exists");
 
-        contractTree.positionUser(newUser,referrerAddress,treeDepth);
-        
         createUser(newUser, referrerAddress);
 
+        contractTree.positionUser(newUser,referrerAddress,10);
+        
         _TreePayment(newUser, true);
     }
 
@@ -244,8 +242,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
 
         //add data to struct
         users[_userAddress] = user;
-        treeUserLostProfits[_userAddress] = [0,0,0,0,0,0,0,0,0,0];
-        treeuserlevelslock[_userAddress] = [true,true,true,false,false,false,false,false,false,false];
+        firstLockedLvl[_userAddress] = 4;
 
         //total users count
         totalUsers += 1;
@@ -298,6 +295,8 @@ contract dpnmMain is IERC20Metadata, Ownable {
         treeRefs[9] = 8e17;
         treeRefs[10] = 8e17;
 
+        uint amountToBeTransferredToFeeCollector;
+
         //loop tree for 10 lvls up depositing bonus
         address[15] memory uplineUsers = contractTree.getLvlsUp(newUser);
         //deposit bonus to 10 lvls up
@@ -305,23 +304,23 @@ contract dpnmMain is IERC20Metadata, Ownable {
             if (uplineUsers[i] == address(0)) {
                 //top of tree, rest fee stays at contract liquidity, lvl 8-10 goes to collector
                 if (i<8) {
-                    busd.safeTransfer(feeCollector, 24e17);//transfer 2.4 BUSD
+                    amountToBeTransferredToFeeCollector += 24e17;//transfer 2.4 BUSD
                 } else {
-                    busd.safeTransfer(feeCollector, (10-i)*8e17);//transfer 0.8 BUSD for each left lvl
+                    amountToBeTransferredToFeeCollector += (10-i)*8e17;//transfer 0.8 BUSD for each left lvl
                 }
                 
                 break;
             } else {
-                depositBonus(uplineUsers[i],treeRefs[i+1],0,true,i+1);
+                amountToBeTransferredToFeeCollector += depositBonus(uplineUsers[i],treeRefs[i+1],0,true,i+1);
             }
             
         }
 
-        busd.safeTransfer(feeCollector, 4e18);
+        amountToBeTransferredToFeeCollector += 4e18;
 
         //mint gwt to user balance, only if already bought dPNM (not first tree payment)
         if (users[newUser].tokenData.totalBuyAmount > 0 ) {
-            gwt.mint(newUser,gwtForTreeActivation);
+            require(gwt.mint(newUser,gwtForTreeActivation),'GWT mint error');
         }
         
         //set time until tree is active
@@ -334,6 +333,9 @@ contract dpnmMain is IERC20Metadata, Ownable {
         if (prestartMode) {
             busd.safeTransfer(feeCollector, busd.balanceOf(address(this)));
         }
+        else {
+            busd.safeTransfer(feeCollector, amountToBeTransferredToFeeCollector);
+        }
 
     }
 
@@ -342,7 +344,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * Both bonus require tree not overdue.
      * For dPNM bonus checks if specific tree lvl is unlocked
      * For tree payment bonus lvl lock is ignored. 
-     * For dPNM bonus require that token value greater then earn limit left
+     * For dPNM bonus require that token value less then earn limit left
      * For dPNM bonus require that dPNM purchased at least once
      * If bonus is deposited then user totalEarned counter increased
      * If bonus is not deposited then increase lost profit counter
@@ -355,12 +357,13 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @param treeActivationBonus True if bonus is for tree payment, else dPNM buy
      * @param lvl Level number where bonus is generated from view of userAddress
      */
-    function depositBonus(address userAddress, uint bonusAmount, uint purchaseAmount, bool treeActivationBonus, uint lvl) private {
+    function depositBonus(address userAddress, uint bonusAmount, uint purchaseAmount, bool treeActivationBonus, uint lvl) private returns(uint){
+        uint feeCollectorBonus;
         if (treeActivationBonus) {
             //process bonus for tree payment
-            if (users[userAddress].treePaidUntil >= block.timestamp||userAddress==owner()) {
+            if (users[userAddress].treePaidUntil >= block.timestamp||userAddress==firstUser) {
                 //if lvl8+ is unlocked then 10% fee
-                if (treeuserlevelslock[userAddress][7] == true) { 
+                if (firstLockedLvl[userAddress]>8) { 
                     bonusAmount = bonusAmount/100*90; 
                     }
 
@@ -372,24 +375,28 @@ contract dpnmMain is IERC20Metadata, Ownable {
                 //no bonus, increase lost profit counter
                 treeUserLostProfits[userAddress][lvl-1] += bonusAmount;
 
-                if (lvl>=8) { busd.safeTransfer(feeCollector, bonusAmount);}
+                if (lvl>=8) { 
+                    feeCollectorBonus += bonusAmount;
+                    }
 
 
             }
         } else {
             //process bonus for dPNM buy
-            if (users[userAddress].treePaidUntil >= block.timestamp||userAddress==owner()) {
+            if (users[userAddress].treePaidUntil >= block.timestamp||userAddress==firstUser) {
                 //deposit bonus or lost profit, lvls 1-7 stays in liquidity, 8-10 goes to fee collector
-                if (!treeuserlevelslock[userAddress][lvl-1]) {
+                if (firstLockedLvl[userAddress]<=lvl) {
                     treeUserLostProfits[userAddress][lvl-1] += bonusAmount;
 
-                    if (lvl>=8) { busd.safeTransfer(feeCollector, bonusAmount); }
+                    if (lvl>=8) { 
+                        feeCollectorBonus += bonusAmount;
+                        }
                     
                 } else {
                     //should buy min tokens amount and token value should be less than earn limit
-                    if (isQualifiedForBonus(userAddress)||userAddress==owner()) {
+                    if (isQualifiedForBonus(userAddress)||userAddress==firstUser) {
                         //if lvl 8+ is unlocked then 10% fee
-                        if (treeuserlevelslock[userAddress][7] == true) { bonusAmount = bonusAmount/100*90; }
+                        if (firstLockedLvl[userAddress]>8) { bonusAmount = bonusAmount/100*90; }
                         busd.safeTransfer(userAddress, bonusAmount);
                         users[userAddress].totalEarned += bonusAmount;
                         totalUsersEarnings += bonusAmount;
@@ -413,12 +420,15 @@ contract dpnmMain is IERC20Metadata, Ownable {
                 //increase lost profit counter, tree is overdue, no turnover accrued. If lvl 8+ then goes to collector
                 treeUserLostProfits[userAddress][lvl-1] += bonusAmount;
 
-                if (lvl>=8) { busd.safeTransfer(feeCollector, bonusAmount);}
+                if (lvl>=8) { 
+                    feeCollectorBonus += bonusAmount;
+                    // busd.safeTransfer(feeCollector, bonusAmount);
+                    }
 
             }
             
         }
-        
+        return(feeCollectorBonus);
     }
 
     /**
@@ -440,9 +450,9 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Browse user tree levels in depth of 10. If user turnover enough to unlock level then level is unlocked.
      */
     function openNewLvl (address userAddress) private {
-        for (uint i=0;i<10;i++) {
-            if (!treeuserlevelslock[userAddress][i]&&users[userAddress].totalTurnover>=treeLvlUnlockCost[i]) {
-                treeuserlevelslock[userAddress][i] = true;
+        for (uint i=firstLockedLvl[userAddress];i<=10;i++) {
+            if (users[userAddress].totalTurnover>=treeLvlUnlockCost[i-1]) {
+                firstLockedLvl[userAddress] = i+1;
             }    
         }
     }
@@ -476,21 +486,10 @@ contract dpnmMain is IERC20Metadata, Ownable {
         uint userTotaldPNMdeposit = totalBUSDForTokenBuy * 1e18 / tokenPrice;
         totaldPNM += userTotaldPNMdeposit;
 
-        //get busd payment
-        busd.safeTransferFrom(msg.sender, address(this), BUSDamount);
 
         users[msg.sender].dpnmBalance += userTotaldPNMdeposit;
         //deposit gwt for fee amount + additional gwt if available
         uint userTotalGWTdeposit = BUSDamount / 100 * totalFee;//fee increase with multiplier
-
-        //mint gwt for user, if first purchase then also add gwt for tree payment
-        if (users[msg.sender].tokenData.totalBuyAmount == 0) {
-            gwt.mint(msg.sender,userTotalGWTdeposit + (userTotalGWTdeposit / 100 * gwtBuyIncrease) + gwtForTreeActivation);
-        } else {
-            gwt.mint(msg.sender,userTotalGWTdeposit + (userTotalGWTdeposit / 100 * gwtBuyIncrease));
-        }
-        //increase total buy
-        users[msg.sender].tokenData.totalBuyAmount += BUSDamount;
 
         //increase earn limit
         uint increasedLimit = BUSDamount / 100 * earnLimitDepositedPerc;
@@ -505,6 +504,20 @@ contract dpnmMain is IERC20Metadata, Ownable {
             users[msg.sender].tokenData.lastBuyTime = block.timestamp;
         }
 
+        //mint gwt for user, if first purchase then also add gwt for tree payment
+        uint gwtMintAmount = userTotalGWTdeposit + (userTotalGWTdeposit / 100 * gwtBuyIncrease);
+        if (users[msg.sender].tokenData.totalBuyAmount == 0) {
+            require(gwt.mint(msg.sender,gwtMintAmount + gwtForTreeActivation),'GWT mint error');
+        } else {
+            require(gwt.mint(msg.sender,gwtMintAmount),'GWT mint error');
+        }
+
+        //increase total buy
+        users[msg.sender].tokenData.totalBuyAmount += BUSDamount;
+
+        //get busd payment
+        busd.safeTransferFrom(msg.sender, address(this), BUSDamount);
+
         //deposit marketing for tree upline
         depositBonusFordPNMbuy(msg.sender,BUSDamount);
         // console.log('Bought=',userTotaldPNMdeposit);
@@ -517,7 +530,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * If maxDailyBuy !=0 then equals to specific BUSD amount.
      * Amount that user bought dPNM in last 24h window deducted from maxDailyBuy
      * Amount that user sold dPNM in last 48h window added to maxDailyBuy
-     * maxDailyBuy can not be lower than minDailyBuy
+     * maxDailyBuy can not be lower than lowerBoundMaxDailyBuy
      */
     function getMaxDailyBuy (address user) public view returns (uint){
         //check if desired dPNM buy amount fits into user daily buy limit
@@ -532,8 +545,8 @@ contract dpnmMain is IERC20Metadata, Ownable {
         //calc buy limit from pool size
         if (maxDailyBuy != 0) {
             buyLimit = maxDailyBuy;
-        } else if (maxBuyLimit < minDailyBuy) {
-            buyLimit = minDailyBuy;
+        } else if (maxBuyLimit < lowerBoundMaxDailyBuy) {
+            buyLimit = lowerBoundMaxDailyBuy;
         } else {
             buyLimit = maxBuyLimit;
         }
@@ -553,7 +566,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
         if ((int(buyLimit) - int(last24BuyAmount) + int(soldLast48Hours)) <= 0) {
             buyLimit = 0;
         }  else {
-            buyLimit = buyLimit - uint(last24BuyAmount) + uint(soldLast48Hours);
+            buyLimit = buyLimit + uint(soldLast48Hours) - uint(last24BuyAmount) ;
         }
 
         return(buyLimit);
@@ -580,6 +593,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
         treeRefs[10] = 16;
 
         address[15] memory uplineUsers = contractTree.getLvlsUp(userAddress);
+        uint feeCollectorBonus;
         //deposit bonus to 10 lvls up
         for(uint i=0;i<10;i++){
             if (uplineUsers[i] == address(0)) {
@@ -595,9 +609,13 @@ contract dpnmMain is IERC20Metadata, Ownable {
                 break;
             } else {
                 uint bonus_size = buyAmount*1e18 / 1000 * treeRefs[i+1]/1e18;
-                depositBonus(uplineUsers[i],bonus_size,buyAmount,false,i+1);
+                feeCollectorBonus += depositBonus(uplineUsers[i],bonus_size,buyAmount,false,i+1);
 
             }   
+        }
+        if(feeCollectorBonus!=0) {
+            busd.safeTransfer(feeCollector, feeCollectorBonus);
+
         }
     }
 
@@ -618,6 +636,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
     function selldPNM (uint BUSDamount) public onlyActivated notPrestart {
         //get user total token value
         uint dPNMprice = getdPNMPrice();
+        require(BUSDamount > 0 && dPNMprice > 0, 'Should be more than 0');
         uint userTokenValue = users[msg.sender].dpnmBalance * dPNMprice / 1e18;
         uint leftLimit = users[msg.sender].earnLimitLeft;
         // console.log("value=",userTokenValue);
@@ -654,18 +673,20 @@ contract dpnmMain is IERC20Metadata, Ownable {
         
         //decrease total dpnm
         totaldPNM -= dPNMtoBurn;
+        //try to increase turnover for 10 lvl up if enabled
+        accruedPNMsellTurnover(msg.sender,BUSDamount);
+
         //get fee
         uint totalFee = sellFeeToDevs + sellFeeToLiquidity;
         
         //mint gwt + additional gwt if available
-        gwt.mint(msg.sender,(BUSDamount*1e18 / 100 * totalFee/1e18) + (BUSDamount*1e18 / 100 * totalFee / 100 * gwtSellIncrease/1e18));
+        uint gwtMintAmount = (BUSDamount*1e18 / 100 * totalFee/1e18) + (BUSDamount*1e18 / 100 * totalFee / 100 * gwtSellIncrease/1e18);
+        require(gwt.mint(msg.sender,gwtMintAmount),'GWT mint error');
         //send busd to user
         uint depositBUSD = BUSDamount *1e18 / 100 * (100-totalFee)/1e18;
         busd.safeTransfer(msg.sender, depositBUSD);
         //send busd to fee collector
         busd.safeTransfer(feeCollector, BUSDamount*1e18 / 100 * sellFeeToDevs/1e18);
-        //try to increase turnover for 10 lvl up if enabled
-        accruedPNMsellTurnover(msg.sender,BUSDamount);
         //emit event
         emit SelldPNM(msg.sender, dPNMtoBurn,depositBUSD,dPNMprice);
 
@@ -711,20 +732,23 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * Checks if new tree level is qualified and unlock it after turnover is purchased
      */
     function buyTurnoverWithGWT(uint turnoverAmount) public onlyActivated notPrestart {
+        require(turnoverAmount > 0, 'Should be more than 0');
+
         //should have enough GWT for purchase, 1 GWT = 200 BUSD turnover
         uint gwtCost = turnoverAmount * 1e18 / turnoverForOneGWT;
         require(gwtCost<=gwt.balanceOf(msg.sender),'Not enough GWT');
         //pay fee
         payFeeForGWTtrans();
         
-        //burn gwt
-        gwt.burn(msg.sender,gwtCost);
-
         //add turnover
         users[msg.sender].totalTurnover += turnoverAmount;
 
         //check if new lvl opened
         openNewLvl(msg.sender);
+
+        //burn gwt
+        require(gwt.burn(msg.sender,gwtCost),'GWT burn error');
+
 
         emit buyTurnover(msg.sender, turnoverAmount, gwtCost);
         
@@ -739,23 +763,25 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @param earnlimitAmount Amount of BUSD earn limit user want to purchase
      */
     function buyEarnLimitWithGWT(uint earnlimitAmount) public onlyActivated notPrestart {
+        require(earnlimitAmount > 0, 'Should be more than 0');
         //should have enough GWT for purchase, 1 GWT = 1.25 BUSD earn limit
         uint gwtCost = earnlimitAmount * 1e18 / earnLimitForOneGWT;
         require(gwtCost<=gwt.balanceOf(msg.sender),'Not enough GWT');
         require(users[msg.sender].tokenData.totalBuyAmount!=0,'Need min dPNM buy');
+
         //increase earn if not more than 10% of total earn limit for all time
         uint maxearnLimitFromdPNMbuy = users[msg.sender].tokenData.totalBuyAmount / 100 * 220;//220% from purchase cost (equals 10% of total earn limit)
         require(maxearnLimitFromdPNMbuy>=(users[msg.sender].totalEarnLimit + earnlimitAmount),'Exceeds 10%');
+
+        //increase earn limit
+        users[msg.sender].earnLimitLeft += earnlimitAmount;
+        users[msg.sender].totalEarnLimit += earnlimitAmount;
 
         //pay fee
         payFeeForGWTtrans();
 
         //burn gwt
-        gwt.burn(msg.sender,gwtCost);
-
-        //increase earn limit
-        users[msg.sender].earnLimitLeft += earnlimitAmount;
-        users[msg.sender].totalEarnLimit += earnlimitAmount;
+        require(gwt.burn(msg.sender,gwtCost),'GWT burn error');
 
         emit buyEarnLimit(msg.sender, earnlimitAmount, gwtCost);
         
@@ -774,10 +800,10 @@ contract dpnmMain is IERC20Metadata, Ownable {
     /**
      * @dev Change amount of daily dPNM buy limit for each address
      * If equals to 0 then calculated as 0.1% of contract BUSD balance. Else is BUSD fixed amount
-     * Should be more then minDailyBuy
+     * Should be more then lowerBoundMaxDailyBuy
      */
-    function setDailyBuyLimit (uint amount) public onlyPromoter {
-        require(amount >= minDailyBuy||amount == 0, 'Too low');
+    function setDailyBuyLimit (uint amount) external onlyPromoter {
+        require(amount >= lowerBoundMaxDailyBuy||amount == 0, 'Too low');
         maxDailyBuy = amount;
     }
 
@@ -785,7 +811,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Change amount of GWT deposited for activation
      * Should be in range 5-15 GWT
      */
-    function setGWTforActivation (uint amount) public onlyPromoter {
+    function setGWTforActivation (uint amount) external onlyPromoter {
         require(5e18<=amount&&amount<=15e18, 'Out of range');
         gwtForTreeActivation = amount;
     }
@@ -794,7 +820,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Change amount of days given for tree activation
      * Should be in range 30-60 days
      */
-    function setDaysForTree(uint amount) public onlyPromoter {
+    function setDaysForTree(uint amount) external onlyPromoter {
         require(30<=amount&&amount<=60, 'Out of range');
         treePaymentPeriod = amount * 1 days;
     }
@@ -804,7 +830,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * Should be in range 90-180 days
      */
 
-    function setMaxDaysForTree(uint amount) public onlyPromoter {
+    function setMaxDaysForTree(uint amount) external onlyPromoter {
         require(90<=amount&&amount<=180, 'Out of range');
         treeMaxPaymentPeriod = amount * 1 days;
     }
@@ -813,7 +839,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Change fee in percent that stays at dPNM contract BUSD liquidity on dPNM buy
      * Should be in range 0-10 percent
      */
-    function setbuyFeeToLiquidity(uint amount) public onlyPromoter {
+    function setbuyFeeToLiquidity(uint amount) external onlyPromoter {
         require(0<=amount&&amount<=10, 'Out of range');
         buyFeeToLiquidity = amount;
     }
@@ -822,7 +848,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Change fee in percent that stays at dPNM contract BUSD liquidity on dPNM sell
      * Should be in range 0-5 percent
      */
-    function setsellFeeToLiquidity(uint amount) public onlyPromoter {
+    function setsellFeeToLiquidity(uint amount) external onlyPromoter {
         require(0<=amount&&amount<=5, 'Out of range');
         sellFeeToLiquidity = amount;
     }
@@ -831,7 +857,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Change fee in BUSD that stays at dPNM contract BUSD liquidity on earn limit buy/turnover buy
      * Should be in range 0-2 BUSD
      */
-    function setgwtTransFeeLiquidity(uint amount) public onlyPromoter {
+    function setgwtTransFeeLiquidity(uint amount) external onlyPromoter {
         require(0<=amount&&amount<=2e18, 'Out of range');
         gwtTransFeeLiquidity = amount;
     }
@@ -840,7 +866,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Change turnover user gets for 1 GWT on purchase
      * Should be in range 200-250 BUSD
      */
-    function setturnoverForOneGWT(uint amount) public onlyPromoter {
+    function setturnoverForOneGWT(uint amount) external onlyPromoter {
         require(200e18<=amount&&amount<=250e18, 'Out of range');
         turnoverForOneGWT = amount;
     }
@@ -849,7 +875,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Change percent of additional turnover added on dPNM purchase
      * Should be in range 0-25 percent
      */
-    function setdPNMbuyTurnoverIncrease(uint amount) public onlyPromoter {
+    function setdPNMbuyTurnoverIncrease(uint amount) external onlyPromoter {
         require(0<=amount&&amount<=25, 'Out of range');
         dPNMbuyTurnoverIncrease = amount;
     }
@@ -858,7 +884,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Change percent of additional GWT for dPNM buy in percent 
      * Should be in range 0-25 percent
      */
-    function setgwtBuyIncrease(uint amount) public onlyPromoter {
+    function setgwtBuyIncrease(uint amount) external onlyPromoter {
         require(0<=amount&&amount<=25, 'Out of range');
         gwtBuyIncrease = amount;
     }
@@ -867,7 +893,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Change percent of additional GWT for dPNM sell, from BUSD sell amount
      * Should be in range 0-25 percent
      */
-    function setgwtSellIncrease(uint amount) public onlyPromoter {
+    function setgwtSellIncrease(uint amount) external onlyPromoter {
         require(0<=amount&&amount<=25, 'Out of range');
         gwtSellIncrease = amount;
     }
@@ -876,7 +902,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Change percent of turnover accrued for for dPNM sell from sell amount 
      * Should be in range 0-25 percent
      */
-    function setdPNMsellTurnoverIncrease(uint amount) public onlyPromoter {
+    function setdPNMsellTurnoverIncrease(uint amount) external onlyPromoter {
         require(0<=amount&&amount<=25, 'Out of range');
         dPNMsellTurnoverIncrease = amount;
     }
@@ -885,7 +911,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Change percent of earn limit accrued for dPNM buy from buy amount
      * Should be in range 200-250 percent
      */
-    function setearnLimitDepositedPerc(uint amount) public onlyPromoter {
+    function setearnLimitDepositedPerc(uint amount) external onlyPromoter {
         require(200<=amount&&amount<=250, 'Out of range');
         earnLimitDepositedPerc = amount;
     }
@@ -905,7 +931,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * total earned
      * total earn limit
      */
-    function getUserData(address account) public view returns (uint, uint, uint, uint, uint) {
+    function getUserData(address account) external view returns (uint, uint, uint, uint, uint) {
         return(
             users[account].dpnmBalance, 
             users[account].totalTurnover, 
@@ -924,7 +950,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * last sell amount, accumulative for 48h window
      */
 
-    function getUserBuySellData(address account) public view returns (uint, uint, uint, uint, uint) {
+    function getUserBuySellData(address account) external view returns (uint, uint, uint, uint, uint) {
         return(
             users[account].tokenData.lastBuyTime, 
             users[account].tokenData.lastBuyAmount, 
@@ -937,7 +963,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Check if user exist in struct 
      */    
     function isUserExists(address user) public view returns (bool) {
-        return (users[user].referrer != address(0)||user==owner());
+        return (users[user].referrer != address(0)||user==firstUser);
     }
 
     /** 
@@ -947,17 +973,19 @@ contract dpnmMain is IERC20Metadata, Ownable {
     return users[account].treePaidUntil;
     }
 
+
     /**
-     * @dev Get address lock status for each level in tree 10 levels deep
+     * @dev Get number of first locked lvl for a user in a tree
      */
-    function getLvlsLockStatus(address user) public view returns(bool[10] memory) {
-        return(treeuserlevelslock[user]);
+    function getFirstLockedLvl(address user) external view returns(uint) {
+        return(firstLockedLvl[user]);
     }
+
 
     /**
      * @dev Return amount of lost profit on each level of tree 10 levels deep
      */
-    function getLostProfit(address account) public view returns (uint[10] memory) {
+    function getLostProfit(address account) external view returns (uint[10] memory) {
         return(treeUserLostProfits[account]); 
     }
 
@@ -1023,14 +1051,14 @@ contract dpnmMain is IERC20Metadata, Ownable {
     /**
      * @dev Get promoter address
      */
-    function promoter() public view onlyOwner returns(address) {
+    function promoter() external view onlyOwner returns(address) {
         return _promoter;
     }
     /**
      * @dev Check if user is in struct so activated
      */
     modifier onlyActivated() { 
-        require(users[msg.sender].referrer != address(0)||msg.sender==owner(), "Please activate first"); 
+        require(users[msg.sender].referrer != address(0)||msg.sender==firstUser, "Please activate first"); 
         _; 
     }
 
@@ -1067,13 +1095,14 @@ contract dpnmMain is IERC20Metadata, Ownable {
         //deposit 1 BUSD
         busd.safeTransferFrom(msg.sender, address(this), 1e18);
         //deposit first user 1 dPNM
-        users[msg.sender].dpnmBalance = 1e18;
+        users[firstUser].dpnmBalance = 1e18;
         totaldPNM = 1e18;
     }
     /**
      * @dev Changing address of feeCollector
      */
     function changeFeeCollector(address newCollector) public onlyOwner {
+        require(newCollector!=address(0),'Non zero address');
         feeCollector = newCollector;
     }
 
@@ -1081,6 +1110,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Changing address of _promoter
      */
     function changePromoter(address newPromoter) public onlyOwner {
+        require(newPromoter!=address(0),'Non zero address');
         _promoter = newPromoter;
     }
     

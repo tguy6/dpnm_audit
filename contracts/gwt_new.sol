@@ -1,4 +1,17 @@
 // SPDX-License-Identifier: MIT
+
+// **********************************************************************************************
+//    ______                                     _________            __                        
+//  .' ___  |                                   |  _   _  |          [  |  _                    
+// / .'   \_|   _ .--.    .--.    _   _   __    |_/ | | \_|   .--.    | | / ]   .---.   _ .--.  
+// | |   ____  [ `/'`\] / .'`\ \ [ \ [ \ [  ]       | |     / .'`\ \  | '' <   / /__\\ [ `.-. | 
+// \ `.___]  |  | |     | \__. |  \ \/\ \/ /       _| |_    | \__. |  | |`\ \  | \__.,  | | | | 
+//  `._____.'  [___]     '.__.'    \__/\__/       |_____|    '.__.'  [__|  \_]  '.__.' [___||__]
+//                                                                                             
+//                                       www.dpnmDeFi.com                                                                 
+// **********************************************************************************************
+
+
 pragma solidity ^0.8.9;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -16,8 +29,6 @@ contract GWT_BEP20 is ERC20, Ownable {
 
     address public dPNMcontract;
     address public feeCollector;
-
-    address[] public allowedContracts;//list of contracts allowed to burn/mint GWT
 
     uint public gwtTransFeeCollector = 1e18;//1 BUSD, immutable
     uint public gwtTransFeeLiquidity = 1e18;//Default 1 BUSD, mutable 0-2 BUSD
@@ -55,6 +66,7 @@ contract GWT_BEP20 is ERC20, Ownable {
     event stakedGWT(address indexed user, uint GWTamount, uint expirationDate, uint dailyProfit, uint stakingID);
     event claimedGWT(address indexed user, uint GWTamount, uint stakingID);
 
+    mapping(address => bool) internal allowedContractsMap;//list of contracts allowed to burn/mint GWT
 
     constructor() ERC20("Grow Token", "GWT") {}
 
@@ -65,6 +77,7 @@ contract GWT_BEP20 is ERC20, Ownable {
      * @param _busd BUSD contract address for fee payments
      */
     function init(address _dPNM, address collector, IERC20 _busd) public onlyOwner {
+        require(collector!=address(0),'Non zero address');
         dPNMcontract = _dPNM;
         feeCollector = collector;
         busd = _busd;
@@ -304,7 +317,7 @@ contract GWT_BEP20 is ERC20, Ownable {
      * @dev change fee that goes to dPNM contract BUSD liquidity on GWT transfer
      * Should be in range 0-2 BUSD
      */
-    function setgwtTransFeeLiquidity(uint amount) public onlyOwner {
+    function setgwtTransFeeLiquidity(uint amount) external onlyOwner {
         require(0<=amount&&amount<=2e18, 'Out of range');
         gwtTransFeeLiquidity = amount;
     }
@@ -314,7 +327,7 @@ contract GWT_BEP20 is ERC20, Ownable {
      * Pool ID should be from 1-6
      * Profit should be in range 0.1-0.6% daily (10-60)
      */
-    function setStakingDailyProfit(uint amount, uint stakingID) public onlyOwner {
+    function setStakingDailyProfit(uint amount, uint stakingID) external onlyOwner {
         require(1<=stakingID&&stakingID<=6, 'Wrong ID');
         require(10<=amount&&amount<=60, 'Out of range');
         stakingPools[stakingID].dailyProfit = amount;
@@ -324,36 +337,44 @@ contract GWT_BEP20 is ERC20, Ownable {
      * @dev Adding new address to the list of contracts that is allowed to mint/burn GWT
      * @param allowedContract Allowed address
      */
-    function addAllowedContract (address allowedContract) public onlyOwner {
-        allowedContracts.push(allowedContract);
+    function addAllowedContract (address allowedContract) external onlyOwner {
+        require(allowedContract!=address(0),'Non zero address');
+        allowedContractsMap[allowedContract] = true;
+
     }
 
     /**
-     * @dev Return allowed contract address on an index
-     * @param index Returned index number
+     * @dev Removing address from the list of contracts that is allowed to to mint/burn GWT
+     * @param allowedContract Allowed address to remove permission
      */
-    function returnAllowedContract(uint index) public view onlyOwner returns (address) {
-        return allowedContracts[index];
+    function removeAllowedContract (address allowedContract) external onlyOwner {
+        require(allowedContract!=address(0),'Non zero address');
+        allowedContractsMap[allowedContract] = false;
+    }
+
+
+    /**
+     * @dev Check if checkedAddress is in allowed contracts list
+     * @param checkedAddress Checked address
+     */
+    function returnAllowedContract(address checkedAddress) public view onlyOwner returns (bool) {
+        return(allowedContractsMap[checkedAddress]);
+
     }
 
     /**
      * @dev Changing address of feeCollector
      */
     function changeFeeCollector(address newCollector) public onlyOwner {
+        require(newCollector!=address(0),'Non zero address');
         feeCollector = newCollector;
     }
 
     /**
-     * @dev Checks if address that made a call is on the list of allowed contracts
+     * @dev Checks if address that made a call is on the map of allowed contracts
      */
     modifier onlyAllowed() { 
-        bool allow = false;
-        for (uint i = 0; i<allowedContracts.length;i++) {
-            if (msg.sender==allowedContracts[i]) {
-                allow = true;
-            } 
-        }
-        require(allow, "403"); 
+        require(allowedContractsMap[msg.sender], "403"); 
         _; 
     }
 

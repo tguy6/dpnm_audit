@@ -1,4 +1,17 @@
 // SPDX-License-Identifier: MIT
+
+// ******************************************************************************************************************
+//  _______  __                                                                __    _________                      
+// |_   __ \[  |                                                              [  |  |  _   _  |                     
+//   | |__) || |--.  .---.  _ .--.   .--.   _ .--..--.  .---.  _ .--.   ,--.   | |  |_/ | | \_|_ .--.  .---.  .---. 
+//   |  ___/ | .-. |/ /__\\[ `.-. |/ .'`\ \[ `.-. .-. |/ /__\\[ `.-. | `'_\ :  | |      | |   [ `/'`\]/ /__\\/ /__\\
+//  _| |_    | | | || \__., | | | || \__. | | | | | | || \__., | | | | // | |, | |     _| |_   | |    | \__.,| \__.,
+// |_____|  [___]|__]'.__.'[___||__]'.__.' [___||__||__]'.__.'[___||__]\'-;__/[___]   |_____| [___]    '.__.' '.__.'
+//                                                                                                                 
+//                                                  www.dpnmDeFi.com                                                                 
+// ******************************************************************************************************************
+
+
 pragma solidity ^0.8.9;
 import "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -8,8 +21,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @dev Only allowed contracts can interact with tree contract to position new addresses.
  */
 contract phenomenalTree  is Ownable{
-    address[] public allowedContracts;//list of contracts allowed to position new addresses
-    uint public totalUsers = 0;//total users ina tree
+    uint public totalUsers = 1;//total users ina tree
+    address immutable public rootOfTree;
 
     //tree of 3 branches structure by ID
     struct Tree {
@@ -21,13 +34,13 @@ contract phenomenalTree  is Ownable{
 
     mapping(address => Tree) public treeUsers;
     mapping(address => uint[15]) public treeuserlevels;//amount of addresses at each of 15 lvls down for address in a tree
+    mapping(address => bool) internal allowedContractsMap;//map of contracts allowed to position new addresses
 
     /**
      * @dev First tree user is deployer
      */
     constructor() {
-        treeUsers[msg.sender] = Tree(address(0),address(0),address(0),address(0));
-        treeuserlevels[msg.sender] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+        rootOfTree = msg.sender;
 
     }
     
@@ -44,10 +57,10 @@ contract phenomenalTree  is Ownable{
             return();
         }
         
-        uint8 lvlDistance;
+        
         uint8 treeBranch;
 
-        (referrerAddress, treeBranch, lvlDistance) = findPositionSpot(newUser,referrerAddress,lvlsDeep);
+        (referrerAddress, treeBranch, ) = findPositionSpot(newUser,referrerAddress,lvlsDeep);
         //create records for user in tree
         Tree memory treeUser = Tree({
             topUser: referrerAddress,
@@ -57,7 +70,6 @@ contract phenomenalTree  is Ownable{
         });
 
         treeUsers[newUser] = treeUser;
-        treeuserlevels[newUser] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
 
         updateTreeUplineCounters(referrerAddress,newUser,treeBranch);
 
@@ -78,6 +90,7 @@ contract phenomenalTree  is Ownable{
      * @param lvlsDeep Depth of levels that take action in search
      */
     function findPositionSpot(address newUser,  address referrerAddress, uint8 lvlsDeep) public view returns(address, uint8, uint8) {
+        require(lvlsDeep>5&&lvlsDeep<=15,'Depth not in range');
         //if user already exists then skip search
         require(!isUserexist(newUser),'Already exist');
 
@@ -186,6 +199,8 @@ contract phenomenalTree  is Ownable{
      * @param _depth How many tree levels use for calculation
      */
     function calcTreeNetwork(address _userAddress, uint _depth ) public view returns(uint) {
+        require(_depth>5&&_depth<=15,'Depth not in range');
+
         //calculate amount of users for amount of lvls in depth of tree
         uint total;
         for (uint i=0; i<_depth; i++) {
@@ -234,7 +249,7 @@ contract phenomenalTree  is Ownable{
      * @param userAddress Searched address
      */
     function isUserexist(address userAddress) public view returns(bool) {
-        if (treeUsers[userAddress].topUser != address(0)||userAddress==owner()) {
+        if (treeUsers[userAddress].topUser != address(0)||userAddress==rootOfTree) {
             return(true);
         } else {
             return(false);
@@ -257,7 +272,7 @@ contract phenomenalTree  is Ownable{
         address topUser = treeUsers[searchedAddress].topUser;
 
         for (uint i=1; i<=_depth; i++) {
-            if (topUser == owner()&&msg.sender!=owner()) { 
+            if (topUser == rootOfTree&&msg.sender!=rootOfTree) { 
                 return(0);
             } else if (topUser == msg.sender) { 
                 return(i);
@@ -272,29 +287,34 @@ contract phenomenalTree  is Ownable{
      * @dev Adding new address to the list of contracts that is allowed to position new addresses to tree
      * @param allowedContract Allowed address
      */
-    function addAllowedContract (address allowedContract) public onlyOwner {
-        allowedContracts.push(allowedContract);
+    function addAllowedContract (address allowedContract) external onlyOwner {
+        require(allowedContract!=address(0),'Non zero address');
+        allowedContractsMap[allowedContract] = true;
     }
 
     /**
-     * @dev Return allowed contract address on an index
-     * @param index Returned index number
+     * @dev Removing address from the list of contracts that is allowed to position new addresses to tree
+     * @param allowedContract Allowed address to remove permission
      */
-    function returnAllowedContract(uint index) public view onlyOwner returns (address) {
-        return allowedContracts[index];
+    function removeAllowedContract (address allowedContract) external onlyOwner {
+        require(allowedContract!=address(0),'Non zero address');
+        allowedContractsMap[allowedContract] = false;
+    }
+
+
+    /**
+     * @dev Check if checkedAddress is in allowed contracts list
+     * @param checkedAddress Checked address
+     */
+    function returnAllowedContract(address checkedAddress) external view onlyOwner returns (bool) {
+        return(allowedContractsMap[checkedAddress]);
     }
 
     /**
-     * @dev Checks if address that made a call is on the list of allowed contracts
+     * @dev Checks if address that made a call is on the map of allowed contracts
      */
     modifier onlyAllowed() { 
-        bool allow = false;
-        for (uint i = 0; i<allowedContracts.length;i++) {
-            if (msg.sender==allowedContracts[i]) {
-                allow = true;
-            }
-        }
-        require(allow, "403"); 
+        require(allowedContractsMap[msg.sender], "403"); 
         _; 
     }
 

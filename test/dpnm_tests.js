@@ -4,7 +4,7 @@ const {
   } = require("@nomicfoundation/hardhat-network-helpers");
 
   const { expect } = require("chai");
-  const { BigNumber, bigNumberify, utils, parseEther, formatEther  } = require("ethers");
+  const { BigNumber, bigNumberify, utils, parseEther, formatEther, constants  } = require("ethers");
   const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 
 /**
@@ -871,7 +871,7 @@ describe("dPNM", () => {
         it("dPNM contract address added to whitelist", async function () {
             const { _dpnm, _busd, _tree, _owner } = await loadFixture(deploydPNMandTree);
 
-            expect(await _tree.returnAllowedContract(0)).to.equal(_dpnm.address);
+            expect(await _tree.returnAllowedContract(_dpnm.address)).to.equal(true);
         });
 
         it("Should set the right owner", async function () {
@@ -892,7 +892,7 @@ describe("dPNM", () => {
         it("dPNM contract address added to whitelist", async function () {
             const { _dpnm, _busd, _tree, _owner, _user1, _user2, _user3, _busd_owner, _gwt } = await loadFixture(deploydPNMandTree);
 
-            expect(await _gwt.returnAllowedContract(0)).to.equal(_dpnm.address);
+            expect(await _gwt.returnAllowedContract(_dpnm.address)).to.equal(true);
         });
 
         it("Should set the right owner", async function () {
@@ -950,7 +950,8 @@ describe("dPNM", () => {
 
         it("User tree lvl 1-3 should be enable, lvl 4 should be disabled", async function () {
             const { _dpnm, _busd, _tree, _owner, _user1, _user2, _user3 } = await loadFixture(firstUserRegisters);
-            expect(await _dpnm.getLvlsLockStatus(user1)).to.eql([true,true,true,false,false,false,false,false,false,false]);
+            expect(Number(await _dpnm.getFirstLockedLvl(user1))).to.eql(4);
+            // expect(await _dpnm.getLvlsLockStatus(user1)).to.eql([true,true,true,false,false,false,false,false,false,false]);
         });
 
 
@@ -1042,7 +1043,7 @@ describe("dPNM", () => {
 
         it("User tree lvl 1-3 should be enable, lvl 4 should be disabled", async function () {
             const { _dpnm, _busd, _tree, _owner, _user1, _user2, _user3 } = await loadFixture(secondUserRegisters);
-            expect(await _dpnm.getLvlsLockStatus(user2)).to.eql([true,true,true,false,false,false,false,false,false,false]);
+            expect(Number(await _dpnm.getFirstLockedLvl(user2))).to.eql(4);
         });
 
 
@@ -1750,7 +1751,9 @@ describe("dPNM", () => {
             // return(0)
             const { _dpnm, _busd, _tree, _owner,  _user1, _user2, _user3, _busd_owner, _gwt } = await loadFixture(tenUsersBuy1000DPNMFor13Days);
 
-            expect(await _dpnm.getLvlsLockStatus(user1)).to.eql([true,true,true,true,true,false,false,false,false,false]);
+            // expect(await _dpnm.getLvlsLockStatus(user1)).to.eql([true,true,true,true,true,false,false,false,false,false]);
+            expect(Number(await _dpnm.getFirstLockedLvl(user1))).to.eql(6);
+
         });
 
 
@@ -1816,7 +1819,9 @@ describe("dPNM", () => {
             const turnoverAmount = utils.parseEther("4000")
             await _dpnm.connect(_user1).buyTurnoverWithGWT(turnoverAmount)
     
-            expect(await _dpnm.getLvlsLockStatus(user1)).to.eql([true,true,true,true,false,false,false,false,false,false]);
+            // expect(await _dpnm.getLvlsLockStatus(user1)).to.eql([true,true,true,true,false,false,false,false,false,false]);
+            expect(Number(await _dpnm.getFirstLockedLvl(user1))).to.eql(5);
+
             expect(await _gwt.balanceOf(user1)).to.be.equal(utils.parseEther("790"))
 
         });
@@ -2280,7 +2285,7 @@ describe("dPNM", () => {
             // console.log("🚀 ~ file: dpnm_tests.js:1813 ~ treeUsers", treeUsers)
             let xpnmUsers = await _xpnm.totalUsers()
             // console.log("🚀 ~ file: dpnm_tests.js:1816 ~ xpnmUsers", xpnmUsers)
-            expect(Number(treeUsers)).to.be.equal(2)
+            expect(Number(treeUsers)).to.be.equal(3)
             expect(Number(xpnmUsers)).to.be.equal(2)
 
 
@@ -2735,7 +2740,7 @@ describe("dPNM", () => {
             await _gwt.init(_dpnm.address, feeCollector, _busd.address);
             //test adding new address to allowedContracts
             await _gwt.addAllowedContract(user3);
-            expect(await _gwt.returnAllowedContract(1)).to.be.equal(user3)
+            expect(await _gwt.returnAllowedContract(user3)).to.be.equal(true)
             await expect(_gwt.mint(user1,utils.parseEther("5"))).to.be.revertedWith("403");
             await expect(_gwt.burn(user1,utils.parseEther("5"))).to.be.revertedWith("403");
         });
@@ -3131,6 +3136,161 @@ describe("dPNM", () => {
 
     });
 
+    /**
+     * @dev Additional tests for first audit fixes
+     */
+    describe("==18) First fixes after audit", function () {
+    // return(0)
+    it("dPNM | Checks for non zero address on init", async function () {
+        let signers = await ethers.getSigners();
+        const _owner = signers[0];
+        const _user1 = signers[1];
+        const _user2 = signers[2];
+        const _user3 = signers[3];
+        const _busd_owner = signers[19];
+        
+        //deploy busd
+        let Token = await ethers.getContractFactory("BEP20Token");
+        const _busd = await Token.connect(_busd_owner).deploy();
+
+        //deploy phenomenalTree
+        Token = await ethers.getContractFactory("phenomenalTree");
+        const _tree = await Token.connect(_owner).deploy();
+            
+        //deploy gwt
+        Token = await ethers.getContractFactory("GWT_BEP20");
+        _gwt = await Token.deploy();
+
+        //deploy dpnm
+        Token = await ethers.getContractFactory("dpnmMain");
+        
+        await expect(Token.connect(_owner).deploy(_busd.address,_tree.address,_gwt.address,constants.AddressZero)).to.be.revertedWith("Non zero address");
+
+        
+
+
+    });
+
+    it("GWT | Checks for non zero address on init", async function () {
+        let signers = await ethers.getSigners();
+        const _owner = signers[0];
+        const _user1 = signers[1];
+        const _user2 = signers[2];
+        const _user3 = signers[3];
+        const _busd_owner = signers[19];
+        
+        //deploy busd
+        let Token = await ethers.getContractFactory("BEP20Token");
+        const _busd = await Token.connect(_busd_owner).deploy();
+
+        //deploy phenomenalTree
+        Token = await ethers.getContractFactory("phenomenalTree");
+        const _tree = await Token.connect(_owner).deploy();
+            
+        //deploy gwt
+        Token = await ethers.getContractFactory("GWT_BEP20");
+        _gwt = await Token.deploy();
+
+        //deploy dpnm
+        Token = await ethers.getContractFactory("dpnmMain");
+        const _dpnm = await Token.connect(_owner).deploy(_busd.address,_tree.address,_gwt.address,feeCollector);
+        console.log("dPNM address=",_dpnm.address);
+    
+        //add dpnm to allowed contracts to call phenomenalTree
+        await _tree.addAllowedContract(_dpnm.address);
+
+        //add dpnm to allowed contracts to call gwt
+        await _gwt.addAllowedContract(_dpnm.address);
+        //set dpnm address and feecollector for gwt
+        
+        await expect(_gwt.init(_dpnm.address, constants.AddressZero, _busd.address)).to.be.revertedWith("Non zero address");
+
+        
+
+
+    });
+
+
+    it("GWT/Tree | addAllowedContract non zero address check", async function () {
+        const { _dpnm, _busd, _tree, _owner, _user1, _user2, _user3, _busd_owner, _gwt } = await loadFixture(secondUserBuyDPNMFor50BUSD);
+        const user1Data = await _dpnm.getUserBuySellData(user1)
+        
+        await expect(_tree.addAllowedContract(constants.AddressZero)).to.be.revertedWith("Non zero address");
+        await expect(_gwt.addAllowedContract(constants.AddressZero)).to.be.revertedWith("Non zero address");
+        await expect(_tree.removeAllowedContract(constants.AddressZero)).to.be.revertedWith("Non zero address");
+        await expect(_gwt.removeAllowedContract(constants.AddressZero)).to.be.revertedWith("Non zero address");
+
+    });
+
+
+    it("dPNM | selldPNM BUSDamount == 0 should revert", async function () {
+        const { _dpnm, _busd, _tree, _owner, _user1, _user2, _user3, _busd_owner, _gwt } = await loadFixture(secondUserBuyDPNMFor50BUSD);
+        const user1Data = await _dpnm.getUserBuySellData(user1)
+        
+        await expect(_dpnm.connect(_user2).selldPNM(utils.parseEther("0"))).to.be.revertedWith("Should be more than 0");
+
+    });
+    
+    it("dPNM | buyTurnoverWithGWT turnoverAmount == 0 should revert", async function () {
+        const { _dpnm, _busd, _tree, _owner, _user1, _user2, _user3, _busd_owner, _gwt } = await loadFixture(secondUserBuyDPNMFor50BUSD);
+        
+        await expect(_dpnm.connect(_user2).buyTurnoverWithGWT(utils.parseEther("0"))).to.be.revertedWith("Should be more than 0");
+
+    });
+
+    it("dPNM | buyEarnLimitWithGWT earnlimitAmount == 0 should revert", async function () {
+        const { _dpnm, _busd, _tree, _owner, _user1, _user2, _user3, _busd_owner, _gwt } = await loadFixture(secondUserBuyDPNMFor50BUSD);
+        
+        await expect(_dpnm.connect(_user2).buyEarnLimitWithGWT(utils.parseEther("0"))).to.be.revertedWith("Should be more than 0");
+
+    });
+
+    it("feeCollector should be not zero address", async function () {
+        const { _dpnm, _busd, _tree, _owner, _user1, _user2, _user3, _busd_owner, _gwt } = await loadFixture(secondUserBuyDPNMFor50BUSD);
+
+        await expect(_dpnm.changeFeeCollector(constants.AddressZero)).to.be.revertedWith("Non zero address");
+        await expect(_dpnm.changePromoter(constants.AddressZero)).to.be.revertedWith("Non zero address");
+        await expect(_gwt.changeFeeCollector(constants.AddressZero)).to.be.revertedWith("Non zero address");
+
+    });
+
+    it("GWT/Tree | removeAllowedContract check", async function () {
+        const { _dpnm, _busd, _tree, _owner, _user1, _user2, _user3, _busd_owner, _gwt } = await loadFixture(secondUserBuyDPNMFor50BUSD);
+        //add allowed contract
+        await _tree.addAllowedContract(user3);
+        //check exist
+        expect(await _tree.returnAllowedContract(user3)).to.be.equal(true);
+        //remove
+        await _tree.removeAllowedContract(user3);
+        //check not exist
+        expect(await _tree.returnAllowedContract(user3)).to.be.equal(false);
+
+        //add allowed contract
+        await _gwt.addAllowedContract(user3);
+        //check exist
+        expect(await _gwt.returnAllowedContract(user3)).to.be.equal(true);
+        //remove
+        await _gwt.removeAllowedContract(user3);
+        //check not exist
+        expect(await _gwt.returnAllowedContract(user3)).to.be.equal(false);
+
+                
+    });
+
+    it("findPositionSpot | tree depth should be in range", async function () {
+        const { _dpnm, _busd, _tree, _owner, _user1, _user2, _user3, _busd_owner, _gwt } = await loadFixture(secondUserBuyDPNMFor50BUSD);
+
+        await expect(_tree.findPositionSpot(user3,user2,3)).to.be.revertedWith("Depth not in range");
+        await expect(_tree.calcTreeNetwork(user1,4)).to.be.revertedWith("Depth not in range");
+        
+
+    });
+
+
+
+
+    });
+    
     
 });
 
