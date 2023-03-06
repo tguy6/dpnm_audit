@@ -13,9 +13,8 @@
 // ********************************************************************************************************
 
 
-pragma solidity ^0.8.6;
+pragma solidity 0.8.6;
 
-import "hardhat/console.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -520,7 +519,6 @@ contract dpnmMain is IERC20Metadata, Ownable {
 
         //deposit marketing for tree upline
         depositBonusFordPNMbuy(msg.sender,BUSDamount);
-        // console.log('Bought=',userTotaldPNMdeposit);
         emit BuydPNM(msg.sender, userTotaldPNMdeposit,BUSDamount,tokenPrice);
     }
 
@@ -541,7 +539,6 @@ contract dpnmMain is IERC20Metadata, Ownable {
         //buy limit options 1: user did not buy in last 24 hours, then limit depends on pool
         //2: user bought in last 24 hours then limit decreased for bought amount
         //3: user sold in last 48 hours then limit is for sold amount
-        // console.log("maxBuyLimit=",maxBuyLimit);
         //calc buy limit from pool size
         if (maxDailyBuy != 0) {
             buyLimit = maxDailyBuy;
@@ -639,7 +636,6 @@ contract dpnmMain is IERC20Metadata, Ownable {
         require(BUSDamount > 0 && dPNMprice > 0, 'Should be more than 0');
         uint userTokenValue = users[msg.sender].dpnmBalance * dPNMprice / 1e18;
         uint leftLimit = users[msg.sender].earnLimitLeft;
-        // console.log("value=",userTokenValue);
         require(BUSDamount<=userTokenValue,'Not enough dPNM');
         require(BUSDamount<=leftLimit,'Not enough earn limit');
         //if user have tokens valued at 1000 BUSD, and earn limit valued at 200 BUSD, then if selling for 20 BUSD (10% of earn limit) it should decrease tokens for 10%

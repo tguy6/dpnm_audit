@@ -12,7 +12,7 @@
 // ******************************************************************************************************************
 
 
-pragma solidity ^0.8.9;
+pragma solidity 0.8.9;
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
@@ -111,7 +111,7 @@ contract phenomenalTree  is Ownable{
         uint rightNetwork = 0;
         
         //loop for 10 lvls deep finding weakest leg
-        while ( !foundPosition && lvl<lvlsDeep + 2) {
+        while ( !foundPosition && lvl<=lvlsDeep) {
             //calc each leaf total tree users    
             left = treeUsers[referrerAddress].leftUser;
             center = treeUsers[referrerAddress].centerUser;
@@ -158,7 +158,8 @@ contract phenomenalTree  is Ownable{
 
             
         }
-        require(lvl<lvlsDeep + 2, "Tree is filled");
+
+        require(foundPosition, "Tree is filled");
         return(referrerAddress,treeBranch,lvl-1);
     }
 
@@ -199,7 +200,7 @@ contract phenomenalTree  is Ownable{
      * @param _depth How many tree levels use for calculation
      */
     function calcTreeNetwork(address _userAddress, uint _depth ) public view returns(uint) {
-        require(_depth>5&&_depth<=15,'Depth not in range');
+        require(_depth>=0&&_depth<=15,'Depth not in range');
 
         //calculate amount of users for amount of lvls in depth of tree
         uint total;
