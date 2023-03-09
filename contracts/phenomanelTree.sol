@@ -190,7 +190,7 @@ contract phenomenalTree  is Ownable{
      * @dev Returns amount of addresses located on each tree level from searched address 15 levels deep
      * @param searchedAddress Address that is queried
      */
-    function getTreeRefs(address searchedAddress) public view returns(uint[15] memory) {
+    function getTreeRefs(address searchedAddress) external view returns(uint[15] memory) {
         return(treeuserlevels[searchedAddress]);    
     }
 
@@ -266,7 +266,7 @@ contract phenomenalTree  is Ownable{
      * @param searchedAddress Address to get distance to caller
      * @param _depth Amount of levels down the tree to search
      */
-    function getUserDistance(address searchedAddress, uint _depth) public view returns(uint) {
+    function getUserDistance(address searchedAddress, uint _depth) external view returns(uint) {
         require(isUserexist(searchedAddress),'Not exist');
         require(isUserexist(msg.sender),'Register first');
         require(_depth<=15,'Too deep');

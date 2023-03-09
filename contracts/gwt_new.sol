@@ -357,7 +357,7 @@ contract GWT_BEP20 is ERC20, Ownable {
      * @dev Check if checkedAddress is in allowed contracts list
      * @param checkedAddress Checked address
      */
-    function returnAllowedContract(address checkedAddress) public view onlyOwner returns (bool) {
+    function returnAllowedContract(address checkedAddress) external view onlyOwner returns (bool) {
         return(allowedContractsMap[checkedAddress]);
 
     }
@@ -365,7 +365,7 @@ contract GWT_BEP20 is ERC20, Ownable {
     /**
      * @dev Changing address of feeCollector
      */
-    function changeFeeCollector(address newCollector) public onlyOwner {
+    function changeFeeCollector(address newCollector) external onlyOwner {
         require(newCollector!=address(0),'Non zero address');
         feeCollector = newCollector;
     }

@@ -250,7 +250,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
     /**
      * @dev tree payment function triggered by user
      */
-    function makeTreePayment () public onlyUnlocked{
+    function makeTreePayment () external onlyUnlocked{
         _TreePayment(msg.sender,false);
     }
     
@@ -467,7 +467,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * Amount of bought in last 24h increased if there were purchases in last 24h, else last purchase time set to timestamp and lastBuyAmount owerwrites
      * @param BUSDamount Amount of BUSD user spend for this purchase
      */
-    function buydPNM (uint BUSDamount) public onlyActivated notPrestart onlyUnlocked{   
+    function buydPNM (uint BUSDamount) external onlyActivated notPrestart onlyUnlocked{   
 
         require(BUSDamount >= mindPNMBuy,"Less than min buy");
         //check if user already bought in last 24 hours, increase counter bought, and decrease buy amount, else make record and update time
@@ -630,7 +630,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * If dPNMsellTurnoverIncrease more than 0 then turnover can be applied to 10 lvls up in tree for percent of sell amount
      * @param BUSDamount Amount for which user want to sell tokens. Will be deposited minus fee
      */
-    function selldPNM (uint BUSDamount) public onlyActivated notPrestart {
+    function selldPNM (uint BUSDamount) external onlyActivated notPrestart {
         //get user total token value
         uint dPNMprice = getdPNMPrice();
         require(BUSDamount > 0 && dPNMprice > 0, 'Should be more than 0');
@@ -690,7 +690,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
     /**
      * @dev dPNM transfer is not allowed, returns false
      */
-    function transfer(address to, uint256 amount) public pure returns (bool) {
+    function transfer(address to, uint256 amount) external pure returns (bool) {
         return (false);
     }
 
@@ -727,7 +727,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * Fee for transaction paid in BUSD
      * Checks if new tree level is qualified and unlock it after turnover is purchased
      */
-    function buyTurnoverWithGWT(uint turnoverAmount) public onlyActivated notPrestart {
+    function buyTurnoverWithGWT(uint turnoverAmount) external onlyActivated notPrestart {
         require(turnoverAmount > 0, 'Should be more than 0');
 
         //should have enough GWT for purchase, 1 GWT = 200 BUSD turnover
@@ -758,7 +758,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * BUSD fee for this transaction is applied
      * @param earnlimitAmount Amount of BUSD earn limit user want to purchase
      */
-    function buyEarnLimitWithGWT(uint earnlimitAmount) public onlyActivated notPrestart {
+    function buyEarnLimitWithGWT(uint earnlimitAmount) external onlyActivated notPrestart {
         require(earnlimitAmount > 0, 'Should be more than 0');
         //should have enough GWT for purchase, 1 GWT = 1.25 BUSD earn limit
         uint gwtCost = earnlimitAmount * 1e18 / earnLimitForOneGWT;
@@ -915,7 +915,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
     /**
      * @dev Change state of lock for activate/makeTreePayment/buydPNM
      */
-    function changeLock() public onlyOwner() {
+    function changeLock() external onlyOwner() {
         isLocked = !isLocked;
     }
 
@@ -1001,7 +1001,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
     /**
      * @dev Returns the name of the token.
      */
-    function name() public view virtual override returns (string memory) {
+    function name() external view virtual override returns (string memory) {
         return _name;
     }
 
@@ -1009,7 +1009,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * @dev Returns the symbol of the token, usually a shorter version of the
      * name.
      */
-    function symbol() public view virtual override returns (string memory) {
+    function symbol() external view virtual override returns (string memory) {
         return _symbol;
     }
 
@@ -1026,21 +1026,21 @@ contract dpnmMain is IERC20Metadata, Ownable {
      * no way affects any of the arithmetic of the contract, including
      * {IERC20-balanceOf} and {IERC20-transfer}.
      */
-    function decimals() public view virtual override returns (uint8) {
+    function decimals() external view virtual override returns (uint8) {
         return 18;
     }
 
     /**
      * @dev See {IERC20-totalSupply}.
      */
-    function totalSupply() public view returns (uint256) {
+    function totalSupply() external view returns (uint256) {
         return totaldPNM;
     }
 
     /**
      * @dev See {IERC20-balanceOf}.
      */
-    function balanceOf(address account) public view returns (uint256) {
+    function balanceOf(address account) external view returns (uint256) {
         return users[account].dpnmBalance;
     }
 
@@ -1085,7 +1085,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
     /**
      * @dev Prestart activated at deploy, once deactivated cannot be enabled
      */
-    function disablePrestartMode() public onlyOwner {
+    function disablePrestartMode() external onlyOwner {
         require(prestartMode,"Already disabled");
         prestartMode = false;
         //deposit 1 BUSD
@@ -1097,7 +1097,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
     /**
      * @dev Changing address of feeCollector
      */
-    function changeFeeCollector(address newCollector) public onlyOwner {
+    function changeFeeCollector(address newCollector) external onlyOwner {
         require(newCollector!=address(0),'Non zero address');
         feeCollector = newCollector;
     }
@@ -1105,7 +1105,7 @@ contract dpnmMain is IERC20Metadata, Ownable {
     /**
      * @dev Changing address of _promoter
      */
-    function changePromoter(address newPromoter) public onlyOwner {
+    function changePromoter(address newPromoter) external onlyOwner {
         require(newPromoter!=address(0),'Non zero address');
         _promoter = newPromoter;
     }
